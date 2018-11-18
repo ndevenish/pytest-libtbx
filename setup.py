@@ -22,7 +22,8 @@ setup(
     url='https://github.com/ndevenish/pytest-libtbx',
     description='pytest plugin to load libtbx-style tests',
     long_description=read('README.rst'),
-    py_modules=['pytest_libtbx'],
+    packages=['pytest_libtbx'],
+    package_dir={'':'src'},
     python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*',
     install_requires=['pytest>=3.5.0'],
     classifiers=[
@@ -44,7 +45,7 @@ setup(
     ],
     entry_points={
         'pytest11': [
-            'libtbx = pytest_libtbx',
+            'libtbx = pytest_libtbx.plugin',
         ],
     },
 )
