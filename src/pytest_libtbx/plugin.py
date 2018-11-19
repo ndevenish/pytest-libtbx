@@ -110,6 +110,18 @@ def _test_from_list_entry(entry, runtests_file, parent):
         testparams = []
         testname = "inline"
 
+    # Skip anything in mmtbx/monomer_library if no environment var
+    # monomer_library
+    if libtbx.env.has_module("mmtbx"):
+        lib = py.path.local(libtbx.env.dist_path("mmtbx")) / "monomer_library"
+        has_env = "MMTBX_CCP4_MONOMER_LIB" in os.environ or "CLIBD_MON" in os.environ
+        if py.path.local(testfile).common(lib) == lib and not has_env:
+            markers.append(
+                pytest.mark.skip(
+                    "No monomer library - set MMTBX_CCP4_MONOMER_LIB or CLIBD_MON"
+                )
+            )
+
     module = runtests_file.dirpath()
     # Convert any placeholder values to absolute paths
     full_command = testfile.replace("$D", module.strpath).replace(
@@ -161,6 +173,9 @@ class LibTBXTest(pytest.Item):
 
     def runtest(self):
         "Called by pytest to run the actual test"
+
+        from mmtbx.monomer_library.server import MonomerLibraryServerError
+
         if self.test_cmd.endswith(".py"):
             # We are running a python script. Run it in-process for speed
             prior_argv = sys.argv
