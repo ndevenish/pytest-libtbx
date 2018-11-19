@@ -174,8 +174,6 @@ class LibTBXTest(pytest.Item):
     def runtest(self):
         "Called by pytest to run the actual test"
 
-        from mmtbx.monomer_library.server import MonomerLibraryServerError
-
         if self.test_cmd.endswith(".py"):
             # We are running a python script. Run it in-process for speed
             prior_argv = sys.argv
