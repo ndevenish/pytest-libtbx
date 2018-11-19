@@ -2,18 +2,27 @@
 
 import pytest
 
-def test_run_tests_found(testdir):
-    testdir.makepyfile(
-        run_tests=""""""
-    )
-    # cfg = testdir.parseconfig()
-    # path = testdir.tmpdir / "run_tests.py"
-    # node = testdir.getnode(cfg, path)
+# def new_module(name, doc=None):
+#     """Create a new module and inject it into sys.modules
 
-    import pdb; pdb.set_trace()
-    result = testdir.runpytest('--collect-only', '-v')
-    import pdb
-    pdb.set_trace()
+#     Arguments:
+#         name (str): Fully qualified name (including parent)
+
+#     Returns:
+#         ModuleType: A module, injected into sys.modules
+#     """
+#     m = ModuleType(name, doc)
+#     m.__fake__ = True
+#     m.__file__ = name + '.py'
+#     sys.modules[name] = m
+#     return m
+
+
+def test_empty_run_tests(testdir):
+    testdir.makepyfile(run_tests="")
+    result = testdir.runpytest("--collect-only", "-v")
+    raise NotImplementedError()
+
 
 @pytest.mark.skip
 def test_empty_dials_runtest(testdir):
@@ -22,7 +31,21 @@ def test_empty_dials_runtest(testdir):
     from libtbx.test_utils.pytest import discover
     tst_list = discover()"""
     )
-    result = testdir.runpytest('--collect-only')
+    result = testdir.runpytest("--collect-only")
+    raise NotImplementedError()
+
+
+def test_skip_pytest_if_no_discover(testdir):
+    raise NotImplementedError()
+
+
+def test_skip_inline_function_test(testdir):
+    raise NotImplementedError()
+
+
+def test_no_collect_if_not_configured(testdir):
+    raise NotImplementedError()
+
 
 # def test_bar_fixture(testdir):
 #     """Make sure that pytest accepts our fixture."""
