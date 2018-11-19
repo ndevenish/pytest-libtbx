@@ -9,7 +9,7 @@ import six
 
 from .fake_env import CustomRuntestsEnvironment
 
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # module paths with libtbx tests, but are not pytest-compatible
