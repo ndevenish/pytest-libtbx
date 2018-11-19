@@ -1,11 +1,14 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 import pytest
 import logging
 import importlib
 import py.path
 import six
+import procrunner
+import runpy
 
 from .fake_env import CustomRuntestsEnvironment
 
@@ -145,14 +148,40 @@ class LibTBXRunTestsFile(pytest.File):
             logger.debug("test %s is a slow test", test)
 
 
+class LibTBXTestException(Exception):
+    """Custom exception for error reporting."""
+
+
 class LibTBXTest(pytest.Item):
     def __init__(self, name, parent, test_command, test_parameters):
         super(LibTBXTest, self).__init__(name, parent)
         self.test_cmd = test_command
-        if test_command.endswith(".py"):
-            self.test_cmd = 'libtbx.python "%s"' % self.test_cmd
         self.test_parms = test_parameters
-        self.full_cmd = " ".join([self.test_cmd] + self.test_parms)
+        self.full_cmd = [self.test_cmd] + self.test_parms
+
+    def runtest(self):
+        "Called by pytest to run the actual test"
+        if self.test_cmd.endswith(".py"):
+            # We are running a python script. Run it in-process for speed
+            prior_argv = sys.argv
+            try:
+                sys.argv = self.full_cmd
+                runpy.run_path(self.test_cmd, run_name="__main__")
+            except SystemExit as e:
+                if e.code != 0:
+                    raise LibTBXTestException("Script exited with non-zero error code")
+            finally:
+                sys.argv = prior_argv
+        else:
+            print("Procrunning ", self.test_cmd)
+            # Not a python script. Assume that we can run as an external program
+            result = procrunner.run(
+                self.full_cmd, print_stdout=False, print_stderr=False
+            )
+            self.add_report_section("call", "stdout", result["stdout"])
+            self.add_report_section("call", "stderr", result["stderr"])
+            if result["stderr"] or result["exitcode"] != 0:
+                raise LibTBXTestException("Script exited with non-zero error code")
 
 
 def pytest_collect_file(path, parent):
