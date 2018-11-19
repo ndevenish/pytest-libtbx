@@ -193,18 +193,26 @@ def pytest_collection_modifyitems(session, config, items):
     # # We should have collected everything that we opened
     assert not _precollected_runtests
 
+
 def pytest_configure(config):
-    config.addinivalue_line("markers",
-        "regression: Mark as a (time-intensive) regression test")
+    config.addinivalue_line(
+        "markers", "regression: Mark as a (time-intensive) regression test"
+    )
+
 
 def pytest_addoption(parser):
-  '''Add '--regression' options to pytest.'''
-  try:
-    parser.addoption("--regression", action="store_true", default=False,
-                     help="run (time-intensive) regression tests")
-  except ValueError:
-    # Thrown in case the command line option is already defined
-    pass
+    """Add '--regression' options to pytest."""
+    try:
+        parser.addoption(
+            "--regression",
+            action="store_true",
+            default=False,
+            help="run (time-intensive) regression tests",
+        )
+    except ValueError:
+        # Thrown in case the command line option is already defined
+        pass
+
 
 def pytest_runtest_setup(item):
     # Check if we want to run regression tests
