@@ -1,4 +1,5 @@
 import sys
+from StringIO import StringIO
 
 
 class CustomRuntestsEnvironment:
@@ -8,6 +9,7 @@ class CustomRuntestsEnvironment:
         self.tests = []
         self._run_tests = None
         self._discover = None
+        self._stdout = None
         self.ran_discover = False
 
     def __enter__(self):
@@ -17,10 +19,14 @@ class CustomRuntestsEnvironment:
         # Back up the functions we're monkeypatching
         self._run_tests = (libtbx.test_utils, libtbx.test_utils.run_tests)
         self._discover = (libtbx.test_utils.pytest, libtbx.test_utils.pytest.discover)
+        self._stdout = sys.stdout
 
         # Replace the discover and run_tests functions
         libtbx.test_utils.run_tests = self.run_tests
         libtbx.test_utils.pytest.discover = self.pytest_discover
+
+        # And the stdout, for things like mmtbx that are verbose
+        sys.stdout = StringIO()
 
         return self
 
@@ -28,6 +34,7 @@ class CustomRuntestsEnvironment:
         # Restore the functions back to their original locations
         self._run_tests[0].run_tests = self._run_tests[1]
         self._discover[0].discover = self._discover[1]
+        sys.stdout = self._stdout
 
     def pytest_discover(self, module=None, pytestargs=None):
         """Method to be used to override the libtbx pytest discovery.
