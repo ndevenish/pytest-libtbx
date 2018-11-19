@@ -111,22 +111,24 @@ def _test_from_list_entry(entry, runtests_file, parent):
         testparams = []
         testname = "inline"
 
+    # Expand the test file into a real path
+    module = runtests_file.dirpath()
+    # Convert any placeholder values to absolute paths
+    full_command = testfile.replace("$D", module.strpath).replace(
+        "$B", libtbx.env.under_build(module.basename)
+    )
+
     # Skip anything in mmtbx if no monomer library present
     if libtbx.env.has_module("mmtbx"):
         lib = py.path.local(libtbx.env.dist_path("mmtbx"))
         has_env = "MMTBX_CCP4_MONOMER_LIB" in os.environ or "CLIBD_MON" in os.environ
-        if py.path.local(testfile).common(lib) == lib and not has_env:
+        if py.path.local(full_command).common(lib) == lib and not has_env:
             markers.append(
                 pytest.mark.skip(
                     "No monomer library - set MMTBX_CCP4_MONOMER_LIB or CLIBD_MON"
                 )
             )
 
-    module = runtests_file.dirpath()
-    # Convert any placeholder values to absolute paths
-    full_command = testfile.replace("$D", module.strpath).replace(
-        "$B", libtbx.env.under_build(module.basename)
-    )
     # Generate a short path to use as the name
     shortpath = testfile.replace("$D/", "").replace("$B/", "build/")
     # Create a file parent object
