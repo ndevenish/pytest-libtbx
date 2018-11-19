@@ -5,6 +5,7 @@ import pytest
 import logging
 import importlib
 import py.path
+import six
 
 from .fake_env import CustomRuntestsEnvironment
 
@@ -65,6 +66,67 @@ def _read_run_tests(path):
     return run_tests
 
 
+def _test_from_list_entry(entry, runtests_file, parent):
+    """
+    Create a LibTBXTest entry from a tst_list entry
+
+    Arguments:
+        entry (str or Iterable or Callable): The entry in the tst_list. This can
+            be a string filename, a list of filename and arguments, or an
+            inline function call (which will be skipped).
+        file (py.path.local):   The run_tests filename that this entry was from
+
+        parent (pytest.Node):   The parent node for the test
+
+    Returns:
+        LibTBXTest: The pytest test object to execute
+    """
+    import libtbx.load_env  # Inline so that we don't import if not using
+
+    # In case we decide to apply any markers whilst building
+    markers = []
+
+    # Extract the file, parameter information
+    if isinstance(entry, six.string_types):
+        testfile = entry
+        testparams = []
+        testname = "main"
+    elif hasattr(entry, "__iter__"):
+        testfile = entry[0]
+        testparams = [str(x) for x in entry[1:]]
+        testname = "_".join(str(p) for p in testparams)
+    elif callable(entry):
+        # Only a couple of these cases exist and awkward enough that we
+        # can afford to skip them
+        markers.append(
+            pytest.mark.skip(
+                "Callable inside run_tests.py not supported in pytest bridge"
+            )
+        )
+        testfile = runtests_file.strpath
+        testparams = []
+        testname = "inline"
+
+    module = runtests_file.dirpath()
+    # Convert any placeholder values to absolute paths
+    full_command = testfile.replace("$D", module.strpath).replace(
+        "$B", libtbx.env.under_build(module.basename)
+    )
+    # Generate a short path to use as the name
+    shortpath = testfile.replace("$D/", "").replace("$B/", "build/")
+    # Create a file parent object
+    pytest_file_object = pytest.File(shortpath, parent)
+    logger.info("Found libtbx test %s::%s", shortpath, testname)
+    test = LibTBXTest(testname, pytest_file_object, full_command, testparams)
+    # Add any markers we might have wanted
+    for marker in markers:
+        test.add_marker(marker)
+        import pdb
+
+        pdb.set_trace()
+    return test
+
+
 class LibTBXRunTestsFile(pytest.File):
     """A Collector to collect tests from run_tests.py"""
 
@@ -74,43 +136,14 @@ class LibTBXRunTestsFile(pytest.File):
         assert run_tests
 
     def collect(self):
-        import libtbx
-
-        # Now collect each test in this file - if it has a test list
+        # Collect each test in this file - if it has a test list
         for test in self._run_tests.__dict__.get("tst_list", []):
-            markers = []
-            if isinstance(test, basestring):
-                testfile = test
-                testparams = []
-                testname = "main"
-            elif callable(test):
-                # A very minimal number of run_tests embed the functions
-                markers.append(
-                    pytest.mark.skip(
-                        "Callable inside run_tests.py not supported in pytest bridge"
-                    )
-                )
-                testfile = "."
-                testparams = []
-                testname = "inline"
-            else:
-                testfile = test[0]
-                testparams = [str(s) for s in test[1:]]
-                testname = "_".join(str(p) for p in testparams)
+            yield _test_from_list_entry(test, self.fspath, self.parent)
 
-            modfile = py.path.local(self._run_tests.__file__)
-            full_command = testfile.replace("$D", modfile.dirname).replace(
-                "$B", libtbx.env.under_build(modfile.dirpath().basename)
-            )
-            shortpath = testfile.replace("$D/", "").replace("$B/", "build/")
-            pytest_file_object = pytest.File(shortpath, self.parent)
-            logger.info("Found libtbx test %s::%s", shortpath, testname)
-            test = LibTBXTest(testname, pytest_file_object, full_command, testparams)
-            for marker in markers:
-                test.add_marker(marker)
-            yield test
-
-        # return []
+        # Now, handle tst_list_slow
+        for test in self._run_tests.__dict__.get("tst_list_slow", []):
+            test = _test_from_list_entry(test, self.fspath, self.parent)
+            test.add_marker(pytest.mark.regression)
 
 
 class LibTBXTest(pytest.Item):
@@ -121,11 +154,6 @@ class LibTBXTest(pytest.Item):
             self.test_cmd = 'libtbx.python "%s"' % self.test_cmd
         self.test_parms = test_parameters
         self.full_cmd = " ".join([self.test_cmd] + self.test_parms)
-        # Not sure about these?
-        # if not hasattr(self, 'module'):
-        #     self.module = None
-        # if not hasattr(self, '_fixtureinfo'):
-        #     self._fixtureinfo = self.session._fixturemanager.getfixtureinfo(self, self.runtest, self)
 
 
 def pytest_collect_file(path, parent):
@@ -141,7 +169,6 @@ def pytest_collect_file(path, parent):
         _collected_dirs.add(dirpath)
 
     # Now, do the normal collection actions
-    logger.info("   pytest_collect_file(%s, %s):", path, parent)
     if path.basename == "run_tests.py":
         logger.debug("Collecting libtbx file %s", path)
         # We *must* have seen this file before, even if it was immediately above
@@ -150,33 +177,26 @@ def pytest_collect_file(path, parent):
             return LibTBXRunTestsFile(path, run_tests, parent)
 
 
-def pytest_collect_directory(path, parent):
-    logger.info("pytest_collect_directory(%s, %s):", path, parent)
-
-
 def pytest_ignore_collect(path, config):
-    # import pdb
-    # pdb.set_trace()
-    logger.info("pytest_ignore_collect(%s, %s):", path, config)
+    # If __init__.py is ignored, the whole module is ignored
     moduleinit = path.dirpath() / "__init__.py"
     if path.basename == "run_tests.py" or path == moduleinit:
         return False
+    # Check if we're in a subdirectory that we want to disable collection
     for module in _tbx_pytest_ignore_roots:
         if path.common(module) == module:
-            logger.info("   Ignoring tbx non-pytest path")
             return True
 
 
 def pytest_collection_modifyitems(session, config, items):
-    # logger.info("pytest_collection_modifyitems(%s, %s, %s):", session, config, items)
     # Called after collections, let's clean up our memory usage
     _collected_dirs = set()
     # # We should have collected everything that we opened
-    # if _precollected_runtests:
-    #     for runt in _precollected_runtests:
-    #         logger.warning("Unprocessed run_tests: %s", runt)
     assert not _precollected_runtests
 
 
-# def pytest_collectreport(report):
-#     logger.info("pytest_collectreport(%s)", report)
+def pytest_runtest_setup(item):
+    # Check if we want to run regression tests
+    if item.get_marker(name="regression"):
+        if not item.config.getoption("--regression"):
+            pytest.skip("Test only runs with --regression")
