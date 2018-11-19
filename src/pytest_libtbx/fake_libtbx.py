@@ -13,6 +13,7 @@ def new_module(name, doc=None):
         ModuleType: A module, injected into sys.modules
     """
     m = ModuleType(name, doc)
+    m.__fake__ = True
     m.__file__ = name + '.py'
     sys.modules[name] = m
     return m
@@ -39,17 +40,19 @@ class FakeTBXEnvironment():
 
     def __exit__(self, type, value, traceback):
         # Restore the environment from before running this
-        for name, module in self._backup_modules:
+        for name, module in self._backup_modules.items():
             if module is None:
                 del sys.modules[name]
             else:
                 sys.modules[name] = module
 
     @staticmethod
-    def pytest_discover(module, pytestargs=None):
+    def pytest_discover(module=None, pytestargs=None):
         """Method to be used to override the libtbx pytest discovery.
         This is so that we don't recursively use pytest to search for more tests
         whilst using pytest to search for tests."""
+        assert module is None
+        assert pytestargs is None
         return []
 
     def run_tests(self, build_dir, dist_dir, test_list):
