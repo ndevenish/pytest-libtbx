@@ -9,6 +9,7 @@ import py.path
 import six
 import procrunner
 import runpy
+import shlex
 
 from .fake_env import CustomRuntestsEnvironment
 
@@ -167,8 +168,12 @@ class LibTBXTest(pytest.Item):
     def __init__(self, name, parent, test_command, test_parameters):
         super(LibTBXTest, self).__init__(name, parent)
         self.test_cmd = test_command
-        self.test_parms = test_parameters
-        self.full_cmd = [self.test_cmd] + self.test_parms
+        # Build the full list of arguments
+        # test_parameters is a list, but this is pointless because the
+        # tst_list in a run_tests can contain items that need to be split -
+        # so it needs to be joined and re-shell-split anyway.
+        self.test_params = shlex.split(" ".join(test_parameters))
+        self.full_cmd = [self.test_cmd] + self.test_params
 
     def runtest(self):
         "Called by pytest to run the actual test"
