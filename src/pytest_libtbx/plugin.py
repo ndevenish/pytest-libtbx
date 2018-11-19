@@ -110,10 +110,9 @@ def _test_from_list_entry(entry, runtests_file, parent):
         testparams = []
         testname = "inline"
 
-    # Skip anything in mmtbx/monomer_library if no environment var
-    # monomer_library
+    # Skip anything in mmtbx if no monomer library present
     if libtbx.env.has_module("mmtbx"):
-        lib = py.path.local(libtbx.env.dist_path("mmtbx")) / "monomer_library"
+        lib = py.path.local(libtbx.env.dist_path("mmtbx"))
         has_env = "MMTBX_CCP4_MONOMER_LIB" in os.environ or "CLIBD_MON" in os.environ
         if py.path.local(testfile).common(lib) == lib and not has_env:
             markers.append(
