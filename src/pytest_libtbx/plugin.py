@@ -24,17 +24,31 @@ _collected_dirs = set()
 # run_tests.py that have been found and read but not 'collected' yet
 _precollected_runtests = {}
 
-# XFEL is an odd case - it has no test runner but is not pytest compatible.
-# Ignore it for collection by default, unless it magically gets a run_tests
-# in the future
-try:
-    import xfel
-except ImportError:
-    pass
-else:
-    xfel_root = py.path.local(xfel.__file__).dirpath()
-    if not (xfel_root / "run_tests.py").isfile():
-        _tbx_pytest_ignore_roots.append(xfel_root)
+
+def _attempt_ignore_module(name, unless_runtests=False):
+    """
+    Try to import a module, and add to the collection ignore list.
+
+    Arguments:
+        name (str): The module name to try importing
+        unless_runtests (bool): If True, look for a run_tests.py and allow
+                                the module to be scanned if present.
+    """
+    try:
+        module = importlib.import_module(name)
+    except ImportError:
+        pass
+    else:
+        root_path = py.path.local(module.__file__).dirpath()
+        if not (unless_runtests and (root_path / "run_tests.py").isfile()):
+            _tbx_pytest_ignore_roots.append(root_path)
+
+
+# XFEL has no test runner, but has non-pytest pytest-named tests.
+# Ignore it for collection by default, unless it gets a run_tests
+_attempt_ignore_module("xfel", unless_runtests=True)
+# dials_regression has no tests
+# _attempt_ignore_module("dials_regression")
 
 
 def _read_run_tests(path):
@@ -123,16 +137,25 @@ def _test_from_list_entry(entry, runtests_file, parent):
 
     # Handle hard-coded behaviour
 
-    # libtbx/test_utils/__init__.py, insanely, asserts on stack trace length
-    if (
-        full_command
-        == py.path.local(libtbx.env.dist_path("libtbx")) / "test_utils" / "__init__.py"
-    ):
-        markers.append(
+    # Hard-coded ignore tests
+    _test_utils_path = (
+        py.path.local(libtbx.env.dist_path("libtbx")) / "test_utils" / "__init__.py"
+    )
+    ignore_tests = [
+        (
+            _test_utils_path,
             pytest.mark.xfail(
-                reason="test_utils/__init__.py asserts on stack trace length!?!?!?"
-            )
-        )
+                "libtbx/test_utils/__init__.py, insanely, asserts on stack trace length"
+            ),
+        ),
+        (
+            py.path.local(libtbx.env.dist_path("dials_regression")),
+            pytest.mark.skip("dials_regression has no tests"),
+        ),
+    ]
+    for path, reason in ignore_tests:
+        if path.common(py.path.local(full_command)) == path:
+            markers.append(reason)
 
     # Skip anything in mmtbx if no monomer library present
     if libtbx.env.has_module("mmtbx"):
@@ -146,6 +169,7 @@ def _test_from_list_entry(entry, runtests_file, parent):
             )
 
     # Generate a short path to use as the name
+    # shortpath = testfile.replace("$D/", module.basename + "/").replace("$B/", module.basename+"/build/")
     shortpath = testfile.replace("$D/", "").replace("$B/", "build/")
     # Create a file parent object
     pytest_file_object = pytest.File(shortpath, parent)
