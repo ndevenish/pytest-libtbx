@@ -47,6 +47,10 @@ def test_no_collect_if_not_configured(testdir):
     raise NotImplementedError()
 
 
+def test_path_added_to_sys_path(testdir):
+    raise NotImplementedError()
+
+
 # def test_bar_fixture(testdir):
 #     """Make sure that pytest accepts our fixture."""
 

@@ -170,6 +170,7 @@ class LibTBXTest(pytest.Item):
     def __init__(self, name, parent, test_command, test_parameters):
         super(LibTBXTest, self).__init__(name, parent)
         self.test_cmd = test_command
+
         # Build the full list of arguments
         # test_parameters is a list, but this is pointless because the
         # tst_list in a run_tests can contain items that need to be split -
@@ -182,15 +183,21 @@ class LibTBXTest(pytest.Item):
 
         if self.test_cmd.endswith(".py"):
             # We are running a python script. Run it in-process for speed
+            # Save the old command line arguments
             prior_argv = sys.argv
+            # TBX RULE: Tests rely on old relative-import behaviour
+            prior_path = list(sys.path)
+            dir_path = py.path.local(self.test_cmd).dirname
             try:
                 sys.argv = self.full_cmd
+                sys.path.insert(0, dir_path)
                 runpy.run_path(self.test_cmd, run_name="__main__")
             except SystemExit as e:
                 if e.code != 0:
                     raise LibTBXTestException("Script exited with non-zero error code")
             finally:
                 sys.argv = prior_argv
+                sys.path = prior_path
         else:
             print("Procrunning ", self.test_cmd)
             # Not a python script. Assume that we can run as an external program
