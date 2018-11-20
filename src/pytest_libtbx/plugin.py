@@ -123,6 +123,19 @@ def _test_from_list_entry(entry, runtests_file, parent):
         "$B", libtbx.env.under_build(module.basename)
     )
 
+    # Handle hard-coded behaviour
+
+    # libtbx/test_utils/__init__.py, insanely, asserts on stack trace length
+    if (
+        full_command
+        == py.path.local(libtbx.env.dist_path("libtbx")) / "test_utils" / "__init__.py"
+    ):
+        markers.append(
+            pytest.mark.xfail(
+                reason="test_utils/__init__.py asserts on stack trace length!?!?!?"
+            )
+        )
+
     # Skip anything in mmtbx if no monomer library present
     if libtbx.env.has_module("mmtbx"):
         lib = py.path.local(libtbx.env.dist_path("mmtbx"))
