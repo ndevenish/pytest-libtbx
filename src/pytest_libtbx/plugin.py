@@ -47,8 +47,15 @@ def _attempt_ignore_module(name, unless_runtests=False):
 # XFEL has no test runner, but has non-pytest pytest-named tests.
 # Ignore it for collection by default, unless it gets a run_tests
 _attempt_ignore_module("xfel", unless_runtests=True)
-# dials_regression has no tests
-# _attempt_ignore_module("dials_regression")
+
+# Ignore the tbx-standard-distribution boost folder. Kind of a hack.
+try:
+    import libtbx
+except ImportError:
+    pass
+else:
+    boost = py.path.local(libtbx.__file__).dirpath().dirpath().dirpath() / "boost"
+    _tbx_pytest_ignore_roots.append(boost)
 
 
 def _read_run_tests(path):
