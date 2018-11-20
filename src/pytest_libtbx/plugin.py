@@ -141,7 +141,7 @@ def _test_from_list_entry(entry, runtests_file, parent):
     _test_utils_path = (
         py.path.local(libtbx.env.dist_path("libtbx")) / "test_utils" / "__init__.py"
     )
-    ignore_tests = [
+    custom_test_marks = [
         (
             _test_utils_path,
             pytest.mark.xfail(
@@ -153,7 +153,7 @@ def _test_from_list_entry(entry, runtests_file, parent):
             pytest.mark.skip("dials_regression has no tests"),
         ),
     ]
-    for path, reason in ignore_tests:
+    for path, reason in custom_test_marks:
         if path.common(py.path.local(full_command)) == path:
             markers.append(reason)
 
