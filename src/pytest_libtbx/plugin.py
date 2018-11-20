@@ -93,7 +93,7 @@ def _read_run_tests(path):
 
     # If we didn't run discover, we can't trust that files are named properly.
     # We can probably extract this information even if not configured
-    if not env.ran_discover:
+    if not env.ran_discover or not module_configured:
         _tbx_pytest_ignore_roots.append(path.dirpath())
 
     # if we aren't configured, we don't want to return a module at all
