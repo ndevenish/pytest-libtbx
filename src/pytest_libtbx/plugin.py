@@ -10,6 +10,7 @@ import six
 import procrunner
 import runpy
 import shlex
+import _pytest.fixtures as fixtures
 
 from .fake_env import CustomRuntestsEnvironment
 
@@ -59,6 +60,10 @@ def _read_run_tests(path):
         return
     run_tests_module = test_module + "." + path.purebasename
 
+    # TODO: Possibly replace importing with
+    # run_tests = path.pyimport()
+    # package_path = path.pypkgpath()
+
     # Import, but intercept some of it's registration calls
     with CustomRuntestsEnvironment() as env:
         run_tests = importlib.import_module(run_tests_module)
@@ -87,8 +92,8 @@ def _test_from_list_entry(entry, runtests_file, parent):
     """
     import libtbx.load_env  # Inline so that we don't import if not using
 
-    # In case we decide to apply any markers whilst building
-    markers = []
+    # Accumulate markers to apply to the test
+    markers = [pytest.mark.usefixtures("tmpdir")]
 
     # Extract the file, parameter information
     if isinstance(entry, six.string_types):
@@ -134,10 +139,10 @@ def _test_from_list_entry(entry, runtests_file, parent):
     # Create a file parent object
     pytest_file_object = pytest.File(shortpath, parent)
     logger.info("Found libtbx test %s::%s", shortpath, testname)
-    test = LibTBXTest(testname, pytest_file_object, full_command, testparams)
-    # Add any markers we might have wanted
-    for marker in markers:
-        test.add_marker(marker)
+
+    test = LibTBXTest(
+        testname, pytest_file_object, full_command, testparams, markers=markers
+    )
 
     return test
 
@@ -159,7 +164,7 @@ class LibTBXRunTestsFile(pytest.File):
         for test in self._run_tests.__dict__.get("tst_list_slow", []):
             test = _test_from_list_entry(test, self.fspath, self.parent)
             test.add_marker(pytest.mark.regression)
-            logger.debug("test %s is a slow test", test)
+            yield test
 
 
 class LibTBXTestException(Exception):
@@ -167,7 +172,7 @@ class LibTBXTestException(Exception):
 
 
 class LibTBXTest(pytest.Item):
-    def __init__(self, name, parent, test_command, test_parameters):
+    def __init__(self, name, parent, test_command, test_parameters, markers=None):
         super(LibTBXTest, self).__init__(name, parent)
         self.test_cmd = test_command
 
@@ -178,8 +183,23 @@ class LibTBXTest(pytest.Item):
         self.test_params = shlex.split(" ".join(test_parameters))
         self.full_cmd = [self.test_cmd] + self.test_params
 
+        for marker in markers:
+            self.add_marker(marker)
+
+        # Handle fixtures from this test/for markers
+        self._fixtureinfo = self.session._fixturemanager.getfixtureinfo(
+            self, self.runtest, self
+        )
+
     def runtest(self):
         "Called by pytest to run the actual test"
+
+        # Build the tmpdir fixture request
+        self.funcargs = {}
+        request = fixtures.FixtureRequest(self)
+        request._fillfixtures()
+        # Switch to this function
+        self.funcargs["tmpdir"].chdir()
 
         if self.test_cmd.endswith(".py"):
             # We are running a python script. Run it in-process for speed
