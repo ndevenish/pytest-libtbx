@@ -50,8 +50,6 @@ def _read_run_tests(path):
     # Don't import this until we know we need it
     import libtbx.load_env
 
-    _tbx_pytest_ignore_roots.append(path.dirpath())
-
     # Guess the module import path from the location of this file
     test_module = path.dirpath().basename
     # We must be directly inside the root of a configured module.
