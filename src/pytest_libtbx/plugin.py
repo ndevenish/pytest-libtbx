@@ -66,7 +66,7 @@ def _read_run_tests(path):
         path (py.path): The run_tests.py file to read
 
     Returns:
-        ModuleType: The run_tests module
+        ModuleType: The run_tests module, or None
     """
     # Don't import this until we know we need it
     import libtbx.load_env
@@ -75,21 +75,30 @@ def _read_run_tests(path):
     test_module = path.dirpath().basename
     # We must be directly inside the root of a configured module.
     # If this module isn't configured, then we don't want to run tests.
-    if not libtbx.env.has_module(test_module):
-        return
-    run_tests_module = test_module + "." + path.purebasename
+    module_configured = libtbx.env.has_module(test_module)
+    module_import = test_module + "." + path.purebasename
 
     # TODO: Possibly replace importing with
     # run_tests = path.pyimport()
     # package_path = path.pypkgpath()
 
-    # Import, but intercept some of it's registration calls
-    with CustomRuntestsEnvironment() as env:
-        run_tests = importlib.import_module(run_tests_module)
+    try:
+        # Import, but intercept some of it's registration calls
+        with CustomRuntestsEnvironment() as env:
+            run_tests = importlib.import_module(module_import)
+    except ImportError:
+        # If this wasn't configured, ignore errors
+        if not module_configured:
+            run_tests = None
 
-    # If we didn't run discover, we can't trust that files are named properly
+    # If we didn't run discover, we can't trust that files are named properly.
+    # We can probably extract this information even if not configured
     if not env.ran_discover:
         _tbx_pytest_ignore_roots.append(path.dirpath())
+
+    # if we aren't configured, we don't want to return a module at all
+    if not module_configured:
+        return None
 
     return run_tests
 
