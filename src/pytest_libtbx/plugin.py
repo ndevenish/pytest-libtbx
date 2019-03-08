@@ -16,12 +16,12 @@ import _pytest.fixtures as fixtures
 import libtbx.load_env
 import libtbx.path
 
-try:
-    from pathlib import Path
-except ImportError:
-    from pathlib2 import Path
-
 from .fake_env import CustomRuntestsEnvironment
+
+try:
+    from typing import Set
+except ImportError:
+    pass
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -327,7 +327,7 @@ def pytest_collect_file(path, parent):
     # Look for a file in this same directory called run_tests.py that
     # hasn't been checked before (or a parent directory - only one per tree)
     dirpath = path.dirpath()
-    if not dirpath in _collected_dirs:
+    if dirpath not in _collected_dirs:
         _collected_dirs.add(dirpath)
         run_tests = dirpath / "run_tests.py"
         if path == run_tests or run_tests.isfile():
@@ -359,6 +359,7 @@ def pytest_ignore_collect(path, config):
 
 def pytest_collection_modifyitems(session, config, items):
     # Called after collections, let's clean up our memory usage
+    global _collected_dirs
     _collected_dirs = set()
     # # We should have collected everything that we opened
     assert not _precollected_runtests
