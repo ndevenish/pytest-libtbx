@@ -12,18 +12,16 @@ import runpy
 import shlex
 import _pytest.fixtures as fixtures
 
-# For now, relax the constraint on having a valid environment
 import libtbx.load_env
-import libtbx.path
 
 from .fake_env import CustomRuntestsEnvironment
 
 try:
-    from typing import Set
+    from typing import Set, Optional, Dict
 except ImportError:
     pass
 
-logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
 # Module paths we are deliberately ignoring
@@ -36,62 +34,78 @@ _precollected_runtests = {}
 _valid_libtbx_module_paths = set()
 
 
-def pytest_sessionstart(session):
-    """Start the pytest session.
+def _get_libtbx_module_list():
+    # type: () -> Optional[Dict[str, Set[py.path.local]]]
+    """Get a list of configured libtbx modules, if possible.
 
-    Use this to introspect libtbx and work out the locations/exclusions.
+    Returns:
+        A dictionary mapping of module names to (sometimes multiple) paths
     """
     # Work out all the libtbx modules
+    modules = {}
     for module in libtbx.env.module_list:
         for path in [x for x in module.dist_paths if x is not None]:
-            if isinstance(path, libtbx.path.path_mixin):
+            try:
+                # Let's try the libtbx-way of converting paths
                 path = abs(path)
-            _valid_libtbx_module_paths.add(py.path.local(path))
-    valid_modules = {x.name for x in libtbx.env.module_list}
+            except TypeError:
+                pass
+            modules.setdefault(module.name, set()).add(py.path.local(path))
+    return modules
 
+
+def _block_xfel_module():
+    """Tries to add XFEL to blocklist, as it doesn't follow libtbx or pytest."""
     # xfel doesn't have a run_tests.py but does have pytest-named-style tests
     # Ignore it, unless a run_tests.py is added.
     try:
         xfel_root = py.path.local(libtbx.env.dist_path("xfel"))
     except KeyError:
-        xfel_root = py.path.local(libtbx.env.dist_path("libtbx")).parent / "xfel"
+        xfel_root = py.path.local(libtbx.env.dist_path("libtbx")).dirpath() / "xfel"
+
+    # Check to see if we magically do have a run_tests.py now
     if not (xfel_root / "run_tests.py").isfile():
         _tbx_pytest_ignore_roots.add(xfel_root)
-        valid_modules.discard("xfel")
+        # valid_modules.discard("xfel")
+        _valid_libtbx_module_paths.discard(xfel_root)
+
+
+def pytest_sessionstart(session):
+    """Start the pytest session.
+
+    Use this to introspect libtbx and work out the locations/exclusions.
+    """
+    configured_modules = set()
+    for name, path in libtbx.env.module_dist_paths.items():
+        _valid_libtbx_module_paths.add(py.path.local(abs(path)))
+        configured_modules.add(name)
+
+    logger.info("Configured tbx modules: %s", ", ".join(sorted(configured_modules)))
+    # libtbx_modules = _get_libtbx_module_list()
+
+    # Update the allowed list with modules
+    # for module, paths in libtbx_modules.items():
+    #     _valid_libtbx_module_paths.update(paths)
 
     # Deliberately ignore the 'boost' folder in the modules path because
-    # we know this has files which confuse pytest.
-    modules_root = py.path.local(libtbx.env.dist_path("libtbx")).dirpath().dirpath()
-    boost_root = modules_root / "boost"
+    # we know this has files which confuse pytest. Only do this if we could
+    # load a module list.
+    boost_root = (
+        py.path.local(libtbx.env.dist_path("libtbx")).dirpath().dirpath() / "boost"
+    )
     _tbx_pytest_ignore_roots.add(boost_root)
     _valid_libtbx_module_paths.discard(boost_root)
-    valid_modules.discard("boost")
 
-    logger.info("Allowed libtbx modules: %s, ", ", ".join(sorted(valid_modules)))
-
-
-# def _attempt_ignore_module(name, unless_runtests=False):
-#     """
-#     Try to import a module, and add to the collection ignore list.
-
-#     Arguments:
-#         name (str): The module name to try importing
-#         unless_runtests (bool): If True, look for a run_tests.py and allow
-#                                 the module to be scanned if present.
-#     """
-#     try:
-#         module = importlib.import_module(name)
-#     except ImportError:
-#         pass
-#     else:
-#         root_path = py.path.local(module.__file__).dirpath()
-#         if not (unless_runtests and (root_path / "run_tests.py").isfile()):
-#             _tbx_pytest_ignore_roots.add(root_path)
-
-
-# XFEL has no test runner, but has non-pytest pytest-named tests.
-# Ignore it for collection by default, unless it gets a run_tests
-# _attempt_ignore_module("xfel", unless_runtests=True)
+    # Alter global state to try to remove XFEL
+    _block_xfel_module()
+    # Block dials_regression - possibly obselete now with dials-data but not
+    # sure that's universal
+    try:
+        regression_path = py.path.local(libtbx.env.dist_path("dials_regression"))
+        _tbx_pytest_ignore_roots.add(regression_path)
+        _valid_libtbx_module_paths.discard(regression_path)
+    except KeyError:
+        pass
 
 
 def _read_run_tests(path):
@@ -102,42 +116,34 @@ def _read_run_tests(path):
         path (py.path): The run_tests.py file to read
 
     Returns:
-        ModuleType: The run_tests module, or None
+        ModuleType: The run_tests module, or None if it's not configured
     """
-    # Don't import this until we know we need it
-    import libtbx.load_env
-
-    # _tbx_pytest_ignore_roots.append(path.dirpath())
-
     # Guess the module import path from the location of this file
     test_module = path.dirpath().basename
-    # We must be directly inside the root of a configured module.
-    # If this module isn't configured, then we don't want to run tests.
-    module_configured = libtbx.env.has_module(test_module)
     module_import = test_module + "." + path.purebasename
 
     # TODO: Possibly replace importing with
     # run_tests = path.pyimport()
     # package_path = path.pypkgpath()
 
-    try:
-        # Import, but intercept some of it's registration calls
-        with CustomRuntestsEnvironment() as env:
-            run_tests = importlib.import_module(module_import)
-    except ImportError:
-        # If this wasn't configured, ignore errors
-        if not module_configured:
-            run_tests = None
+    # try:
+    # Import, but intercept some of it's registration calls
+    with CustomRuntestsEnvironment() as env:
+        run_tests = importlib.import_module(module_import)
+    # except ImportError:
+    #     # If this wasn't configured, ignore errors
+    #     if not module_configured:
+    #         run_tests = None
 
     # If we didn't run discover, we can't trust that files are named properly.
     # We can probably extract this information even if not configured
-    if not env.ran_discover or not module_configured:
+    if not env.ran_discover:
         logger.info("%s didn't run discover so ignoring for collection", path)
         _tbx_pytest_ignore_roots.add(path.dirpath())
 
-    # if we aren't configured, we don't want to return a module at all
-    if not module_configured:
-        return None
+    # # if we aren't configured, we don't want to return a module at all
+    # if not module_configured:
+    #     return None
 
     return run_tests
 
@@ -157,7 +163,6 @@ def _test_from_list_entry(entry, runtests_file, parent):
     Returns:
         LibTBXTest: The pytest test object to execute
     """
-    import libtbx.load_env  # Inline so that we don't import if not using
 
     # Accumulate markers to apply to the test
     markers = [pytest.mark.usefixtures("tmpdir")]
@@ -193,12 +198,11 @@ def _test_from_list_entry(entry, runtests_file, parent):
     # Handle hard-coded behaviour
 
     # Hard-coded ignore tests
-    _test_utils_path = (
-        py.path.local(libtbx.env.dist_path("libtbx")) / "test_utils" / "__init__.py"
-    )
     custom_test_marks = [
         (
-            _test_utils_path,
+            py.path.local(libtbx.env.dist_path("libtbx"))
+            / "test_utils"
+            / "__init__.py",
             pytest.mark.xfail(
                 reason="libtbx/test_utils/__init__.py, insanely, asserts on stack trace length"
             ),
@@ -320,23 +324,53 @@ class LibTBXTest(pytest.Item):
                 raise LibTBXTestException("Script exited with non-zero error code")
 
 
+# def _is_configured_module(path):
+#     return any(x.common(path) == x for x in _valid_libtbx_module_paths)
+
+
 def pytest_collect_file(path, parent):
     # if ".py" in path.strpath:
-    print("Collecting " + str(path))
+    logger.info("Collecting " + str(path))
 
-    # Look for a file in this same directory called run_tests.py that
-    # hasn't been checked before (or a parent directory - only one per tree)
+    # Problem: We may want to ignore a folder, but we don't know until we
+    # read run_tests.py. But we may not get run_tests.py first.
+    #
+    # So, look for a run_tests.py next to any file being collected, and
+    # if found read it and save the results, so that we a) know to ignore
+    # the current node if required, and b) Only read it once so that when
+    # we finally get to run_tests.py we're ready to build the test list.
+
+    # Look for a file in this same directory called run_tests.py.
+    # Storing dirpath means we only check each folder once.
     dirpath = path.dirpath()
     if dirpath not in _collected_dirs:
+        # Only check each folder once.
         _collected_dirs.add(dirpath)
+        # Look for a run_tests.py
         run_tests = dirpath / "run_tests.py"
         if path == run_tests or run_tests.isfile():
-            logger.info("Found %s, caching", run_tests)
-            _precollected_runtests[run_tests] = _read_run_tests(run_tests)
-        _collected_dirs.add(dirpath)
+            is_configured = path.dirpath() in _valid_libtbx_module_paths
+            # Check that we are in a configured module
+            if is_configured:
+                logger.info("Found %s, caching", run_tests)
+                _precollected_runtests[run_tests] = _read_run_tests(run_tests)
+            else:
+                logger.info(
+                    "Found unconfigured run_tests.py in %s; ignoring path", path
+                )
+                _tbx_pytest_ignore_roots.add(dirpath)
+                if path == run_tests:
+                    return
 
     # Now, do the normal collection actions
     if path.basename == "run_tests.py":
+        # Are we actually in a configured module?
+        is_configured = path.dirpath() in _valid_libtbx_module_paths
+
+        if not is_configured:
+            logger.info("%s is not configured, not continuing collection", path)
+            return
+
         logger.debug("Collecting libtbx file %s", path)
         # We *must* have seen this file before, even if it was immediately above
         run_tests = _precollected_runtests.pop(path)
@@ -352,16 +386,22 @@ def pytest_ignore_collect(path, config):
         return False
 
     # Check if we're in a subdirectory that we want to disable collection
-    for module in _tbx_pytest_ignore_roots:
-        if path.common(module) == module:
-            return True
+    # e.g. reading a run_tests.py that doesn't discover() will fill this
+    if any(ignore.common(path) == ignore for ignore in _tbx_pytest_ignore_roots):
+        return True
 
 
 def pytest_collection_modifyitems(session, config, items):
     # Called after collections, let's clean up our memory usage
     global _collected_dirs
     _collected_dirs = set()
-    # # We should have collected everything that we opened
+    # We should have collected everything that we open
+    if _precollected_runtests:
+        logger.error(
+            "Found precollected runners that weren't processed; %s",
+            ", ".join(str(x) for x in _precollected_runtests),
+        )
+
     assert not _precollected_runtests
 
 
