@@ -427,6 +427,6 @@ def pytest_addoption(parser):
 
 def pytest_runtest_setup(item):
     # Check if we want to run regression tests
-    if item.get_marker(name="regression"):
+    if item.get_closest_marker(name="regression"):
         if not item.config.getoption("--regression"):
             pytest.skip("Test only runs with --regression")
