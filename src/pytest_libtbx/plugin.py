@@ -323,9 +323,14 @@ class LibTBXTest(pytest.Item):
             if result["stderr"] or result["exitcode"] != 0:
                 raise LibTBXTestException("Script exited with non-zero error code")
 
+    def repr_failure(self, excinfo):
+        """Trim the stack trace to the instantiated function"""
+        if self.test_cmd.endswith(".py"):
+            # Trim the traceback to the file we're launching
+            traceback = excinfo.traceback.cut(path=self.test_cmd)
+            excinfo.traceback = traceback
 
-# def _is_configured_module(path):
-#     return any(x.common(path) == x for x in _valid_libtbx_module_paths)
+        return super(LibTBXTest, self).repr_failure(excinfo)
 
 
 def pytest_collect_file(path, parent):
