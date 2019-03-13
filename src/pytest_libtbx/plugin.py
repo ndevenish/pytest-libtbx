@@ -16,6 +16,21 @@ import libtbx.load_env
 
 from .fake_env import CustomRuntestsEnvironment
 
+# class FakeStdout(object):
+#     def __init__(self):
+#         self.stdout = sys.stdout
+#     def write(self, value):
+#         if "XFAIL" in value:
+#             import pdb
+#             pdb.set_trace()
+#         self.stdout.write("I:" + value)
+#     def isatty(self):
+#         return self.stdout.isatty()
+#     def flush(self):
+#         return self.stdout.flush()
+
+# sys.stdout = FakeStdout()
+
 try:
     from typing import Set, Optional, Dict
 except ImportError:
@@ -79,6 +94,7 @@ def pytest_sessionstart(session):
     for name, path in libtbx.env.module_dist_paths.items():
         _valid_libtbx_module_paths.add(py.path.local(abs(path)))
         configured_modules.add(name)
+        logger.info("Configured %s: %s", name, py.path.local(abs(path)))
 
     logger.info("Configured tbx modules: %s", ", ".join(sorted(configured_modules)))
     # libtbx_modules = _get_libtbx_module_list()
@@ -128,8 +144,14 @@ def _read_run_tests(path):
 
     # try:
     # Import, but intercept some of it's registration calls
-    with CustomRuntestsEnvironment() as env:
-        run_tests = importlib.import_module(module_import)
+    # try:
+    try:
+        with CustomRuntestsEnvironment() as env:
+            run_tests = importlib.import_module(module_import)
+    except BaseException:
+        logger.error("Failed to import %s", path)
+        raise
+    #     raise RuntimeError('Failed to read {}: {}'.format(run_tests)) from e
     # except ImportError:
     #     # If this wasn't configured, ignore errors
     #     if not module_configured:
@@ -206,12 +228,16 @@ def _test_from_list_entry(entry, runtests_file, parent):
             pytest.mark.xfail(
                 reason="libtbx/test_utils/__init__.py, insanely, asserts on stack trace length"
             ),
-        ),
-        (
-            py.path.local(libtbx.env.dist_path("dials_regression")),
-            pytest.mark.skip("dials_regression has no tests"),
-        ),
+        )
     ]
+    if libtbx.env.has_module("dials_regression"):
+        custom_test_marks.append(
+            (
+                py.path.local(libtbx.env.dist_path("dials_regression")),
+                pytest.mark.skip("dials_regression has no tests"),
+            )
+        )
+
     for path, reason in custom_test_marks:
         if path.common(py.path.local(full_command)) == path:
             markers.append(reason)
@@ -345,6 +371,10 @@ def pytest_collect_file(path, parent):
     # the current node if required, and b) Only read it once so that when
     # we finally get to run_tests.py we're ready to build the test list.
 
+    # CANNOT do this in pytest_collect_directory, because that hook is
+    # only called for subfolders of the initial folder, so will miss any
+    # run_tests.py in the start folder.
+
     # Look for a file in this same directory called run_tests.py.
     # Storing dirpath means we only check each folder once.
     dirpath = path.dirpath()
@@ -386,6 +416,7 @@ def pytest_collect_file(path, parent):
 def pytest_ignore_collect(path, config):
     # If __init__.py is ignored, the whole module is ignored
     # (Appears to be: Never ignore __init__.py or run_tests.py)
+    logger.info("Ignoring? " + str(path))
     moduleinit = path.dirpath() / "__init__.py"
     if path.basename == "run_tests.py" or path == moduleinit:
         return False
@@ -406,8 +437,10 @@ def pytest_collection_modifyitems(session, config, items):
             "Found precollected runners that weren't processed; %s",
             ", ".join(str(x) for x in _precollected_runtests),
         )
-
-    assert not _precollected_runtests
+    # Don't error here, because if we got terminated halfway through then
+    # we might have uncollected items. Maybe some way to detect the error
+    # condition?
+    # assert not _precollected_runtests
 
 
 def pytest_configure(config):
