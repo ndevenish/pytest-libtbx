@@ -12,7 +12,10 @@ import runpy
 import shlex
 import _pytest.fixtures as fixtures
 
-import libtbx.load_env
+try:
+    import libtbx.load_env
+except ImportError:
+    libtbx = None
 
 from .fake_env import CustomRuntestsEnvironment
 
@@ -91,6 +94,10 @@ def pytest_sessionstart(session):
     Use this to introspect libtbx and work out the locations/exclusions.
     """
     configured_modules = set()
+    if libtbx is None:
+        logger.warning("Cannot read libtbx environment. Not allowing any modules.")
+        return
+
     for name, path in libtbx.env.module_dist_paths.items():
         _valid_libtbx_module_paths.add(py.path.local(abs(path)))
         configured_modules.add(name)
