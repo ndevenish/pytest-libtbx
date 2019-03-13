@@ -1,10 +1,20 @@
 import sys
 from types import ModuleType
+from collections import defaultdict
 
 import py.path
 import pytest
 
 pytest_plugins = "pytester"
+
+
+def _build_raiser(message):
+    """Builds a callable that raises if called with a custom message"""
+
+    def _raise(*args, **kwargs):
+        raise RuntimeError(message)
+
+    return _raise
 
 
 class FakeLibTBXModule(object):
@@ -22,45 +32,58 @@ class FakeLibTBX(object):
     """
 
     # Save previous environments, as a stack for reentrancy
-    _previous_libtbx = []
-    _previous_libtbx_load_env = []
+    _previous_modules = defaultdict(list)
+    # _previous_libtbx_load_env = []
 
     def __init__(self, dist_path):
         self._dist_path = py.path.local(dist_path)
-        self._libtbx = ModuleType("libtbx")
-        self._libtbx.__file__ = "fake_libtbx.py"
-        self._libtbx.load_env = ModuleType("libtbx.load_env")
-        self._libtbx.load_env = "fake_libtbx_load_env.py"
-        self._libtbx.env = self
+        self._python_modules = {}
+
+        # The plugin itself uses libtbx and load_env
+        libtbx = self._add_import("libtbx")
+        libtbx.env = self
+        libtbx.load_env = self._add_import("libtbx.load_env")
+
+        # Running collectors replaces these functions that run_tests use
+        libtbx.test_utils = self._add_import("libtbx.test_utils")
+        libtbx.test_utils.pytest = self._add_import("libtbx.test_utils.pytest")
+        libtbx.test_utils.run_tests = _build_raiser(
+            "run_tests should never be called from pytest-libtbx tests"
+        )
+        libtbx.test_utils.pytest.discover = _build_raiser(
+            "discover should never be called from pytest-libtbx tests"
+        )
+        self._libtbx = libtbx
 
         self.module_list = []
         self.module_dist_paths = {}
         self.add_module("libtbx")
 
+    def _add_import(self, name):
+        """Create a python module and adds to the list to replace."""
+        module = ModuleType(name)
+        module.__file__ = name + ".py"
+        self._python_modules[name] = module
+        return module
+
     def __enter__(self):
         # Save any existing module, then insert our fake one
-        FakeLibTBX._previous_libtbx.append(sys.modules.get("libtbx", None))
-        FakeLibTBX._previous_libtbx_load_env.append(
-            sys.modules.get("libtbx.load_env", None)
-        )
-        sys.modules["libtbx"] = self._libtbx
-        sys.modules["libtbx.load_env"] = self._libtbx.load_env
+        for name, module in self._python_modules.items():
+            FakeLibTBX._previous_modules[name].append(sys.modules.get(name, None))
+            sys.modules[name] = module
+
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
-        # Restore any previous module
-        prev_libtbx = FakeLibTBX._previous_libtbx.pop()
-        prev_load_env = FakeLibTBX._previous_libtbx_load_env.pop()
-        if prev_load_env:
-            sys.modules["libtbx.load_env"] = prev_load_env
-        else:
-            del sys.modules["libtbx.load_env"]
-        if prev_libtbx:
-            sys.modules["libtbx"] = prev_libtbx
-        else:
-            del sys.modules["libtbx"]
+        # Restore any previous modules
+        for name in self._previous_modules:
+            prev_mod = self._previous_modules[name].pop()
+            if prev_mod:
+                sys.modules[name] = prev_mod
+            else:
+                del sys.modules[name]
 
-    def add_module(self, name):
+    def add_module(self, name, init=True):
         # type: (str) -> py.path.local
         """"Adds a libtbx module to the environment paths.
 
@@ -73,6 +96,8 @@ class FakeLibTBX(object):
         path = self._dist_path / name
         if not path.check():
             path.mkdir()
+        if init:
+            (path / "__init__.py").ensure(file=True)
         self.module_list.append(FakeLibTBXModule(name, path))
         self.module_dist_paths[name] = path
         return path
@@ -139,7 +164,7 @@ class FakeLibTBX(object):
 
 
 @pytest.fixture
-def libtbx(tmpdir):
+def libtbx(testdir):
     """Create a fake libtbx environment and return it"""
-    with FakeLibTBX(tmpdir) as libtbx:
+    with FakeLibTBX(testdir.tmpdir) as libtbx:
         yield libtbx
