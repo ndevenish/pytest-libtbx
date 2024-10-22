@@ -24,7 +24,7 @@ from .fake_env import CustomRuntestsEnvironment
 logger = logging.getLogger(__name__)
 
 # Module paths we are deliberately ignoring
-_tbx_pytest_ignore_roots = set()  # type: Set[py.path.local]
+_tbx_pytest_ignore_roots: set[py.path.local] = set()
 # Dirs that have already been checked for a run_tests.py
 _collected_dirs = set()
 # run_tests.py that have been found and read but not 'collected' yet
@@ -33,8 +33,7 @@ _precollected_runtests = {}
 _valid_libtbx_module_paths = set()
 
 
-def _get_libtbx_module_list():
-    # type: () -> Optional[Dict[str, Set[py.path.local]]]
+def _get_libtbx_module_list() -> dict[str, set[py.path.local]] | None:
     """Get a list of configured libtbx modules, if possible.
 
     Returns:
