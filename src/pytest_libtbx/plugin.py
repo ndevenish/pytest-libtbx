@@ -1,16 +1,18 @@
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 
-import os
-import sys
-import pytest
-import logging
 import importlib
-import py.path
-import six
-import procrunner
+import logging
+import os
 import runpy
 import shlex
+import sys
+
 import _pytest.fixtures as fixtures
+import procrunner
+import py.path
+import pytest
+import six
 
 try:
     import libtbx.load_env
@@ -35,7 +37,7 @@ from .fake_env import CustomRuntestsEnvironment
 # sys.stdout = FakeStdout()
 
 try:
-    from typing import Set, Optional, Dict
+    from typing import Dict, Optional, Set
 except ImportError:
     pass
 

@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
+from __future__ import annotations
 
-import os
 import codecs
+import os
+
 from setuptools import setup
 
 

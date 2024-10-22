@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pytest_libtbx.fake_env import CustomRuntestsEnvironment
 
 

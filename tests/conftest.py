@@ -1,6 +1,8 @@
+from __future__ import annotations
+
 import sys
-from types import ModuleType
 from collections import defaultdict
+from types import ModuleType
 
 import py.path
 import pytest
@@ -85,7 +87,7 @@ class FakeLibTBX(object):
 
     def add_module(self, name, init=True):
         # type: (str) -> py.path.local
-        """"Adds a libtbx module to the environment paths.
+        """ "Adds a libtbx module to the environment paths.
 
         Args:
             name: The module name. A path will be created.
