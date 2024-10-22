@@ -19,13 +19,13 @@ def _build_raiser(message):
     return _raise
 
 
-class FakeLibTBXModule(object):
+class FakeLibTBXModule:
     def __init__(self, name, path):
         self.name = name
         self.dist_paths = [path, None]
 
 
-class FakeLibTBX(object):
+class FakeLibTBX:
     """Creates a fake libtbx environment with physical structure.
 
     This allows you to simulate a libtbx environment whilst having on-disk

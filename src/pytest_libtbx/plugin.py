@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 
 import importlib
@@ -20,26 +19,6 @@ except ImportError:
     libtbx = None
 
 from .fake_env import CustomRuntestsEnvironment
-
-# class FakeStdout(object):
-#     def __init__(self):
-#         self.stdout = sys.stdout
-#     def write(self, value):
-#         if "XFAIL" in value:
-#             import pdb
-#             pdb.set_trace()
-#         self.stdout.write("I:" + value)
-#     def isatty(self):
-#         return self.stdout.isatty()
-#     def flush(self):
-#         return self.stdout.flush()
-
-# sys.stdout = FakeStdout()
-
-try:
-    from typing import Dict, Optional, Set
-except ImportError:
-    pass
 
 # logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
@@ -280,7 +259,7 @@ class LibTBXRunTestsFile(pytest.File):
     """A Collector to collect tests from run_tests.py"""
 
     def __init__(self, path, run_tests, parent):
-        super(LibTBXRunTestsFile, self).__init__(path, parent)
+        super().__init__(path, parent)
         self._run_tests = run_tests
         assert run_tests
 
@@ -302,7 +281,7 @@ class LibTBXTestException(Exception):
 
 class LibTBXTest(pytest.Item):
     def __init__(self, name, parent, test_command, test_parameters, markers=None):
-        super(LibTBXTest, self).__init__(name, parent)
+        super().__init__(name, parent)
         self.test_cmd = test_command
 
         # Build the full list of arguments
@@ -365,7 +344,7 @@ class LibTBXTest(pytest.Item):
             traceback = excinfo.traceback.cut(path=self.test_cmd)
             excinfo.traceback = traceback
 
-        return super(LibTBXTest, self).repr_failure(excinfo)
+        return super().repr_failure(excinfo)
 
 
 def pytest_collect_file(path, parent):
